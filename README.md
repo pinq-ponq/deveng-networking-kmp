@@ -463,6 +463,37 @@ A few consequences worth knowing:
 - Keep the refresh work inside the same suspend call chain. Dispatching it to an unrelated scope (`GlobalScope.launch`, `viewModelScope.launch`) drops the re-entrance marker and lets the refresh request trigger another refresh.
 - `onUnauthorized` fires per failing request, including when no `sessionRefresher` is configured. With several requests in flight it fires several times, so debounce it on the consumer side.
 
+### Auth Session Kit
+
+Ready-made pieces for apps that sign in with an access token and a rotating refresh token. Only the product's own endpoints are passed in:
+
+```kotlin
+val authCredentialsStorage = AuthCredentialsStorageImpl(dataStore = Settings())
+
+val sessionRefresher = AuthSessionRefresher(
+    authCredentialsStorage = authCredentialsStorage,
+    devengNetworkingModule = devengNetworkingModule,
+    authTokenRenewer = DevengAuthTokenRenewer { refreshToken -> authRepository.fetchRenewedAuthTokens(refreshToken) },
+    onRefreshFailure = { exception -> logger.w(exception) { "Session refresh failed" } }
+)
+
+val authSessionTerminator = AuthSessionTerminator(
+    authCredentialsStorage = authCredentialsStorage,
+    devengNetworkingModule = devengNetworkingModule,
+    refreshTokenRevoker = DevengRefreshTokenRevoker { refreshToken -> authRepository.revokeRefreshToken(refreshToken) },
+    onRevokeFailure = { throwable -> logger.w(throwable) { "Refresh token revoke failed" } }
+)
+
+// Sign-out: requests that still need the session go into authenticatedCleanup.
+authSessionTerminator.endSession(authenticatedCleanup = { unregisterPushToken() })
+```
+
+- `AuthSessionRefresher` is a `DevengSessionRefresher`: pass it as `sessionRefresher`. A renewal response without a refresh token keeps the stored one.
+- `SessionGeneration` guards the write: if the user signs out or another session starts while a renewal is in flight, the old session's tokens are not stored. `AuthSessionTerminator.endSession` advances it; call `SessionGeneration.advance()` yourself wherever else a session is replaced.
+- `AuthCredentialsStorageImpl` keeps the keys `TOKEN`, `REFRESH_TOKEN` and `IS_LOGGED_IN`; `clearAuthCredentials()` clears the whole `Settings` it is given, so give it its own.
+- `SessionExpiryNotifier` keeps the sign-out handler across `initDevengNetworkingModule` calls (call `notifySessionExpired()` from `onUnauthorized`).
+- `decodeJwtPayload(token)` returns a JWT's payload JSON and `decodeJwtClaims<T>(token)` decodes it, ignoring unknown claims. Neither checks the signature.
+
 ### Per-Request Headers and Requests Outside the Session
 
 `requestHeaders` adds headers to a single request; they win over `customHeaders` and the dynamic headers with the same name. A request with `isSessionAuthenticated = false` carries no `Authorization` header, and its 401 neither runs `sessionRefresher` nor fires `onUnauthorized` — for endpoints that authenticate with their own credential, where a 401 says nothing about the user's session:
