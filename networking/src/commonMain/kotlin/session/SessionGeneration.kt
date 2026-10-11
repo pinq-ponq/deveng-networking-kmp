@@ -7,7 +7,7 @@ public object SessionGeneration {
     private val generationMutex = Mutex()
     private var currentGeneration = 0
 
-    public suspend fun currentValue(): Int = generationMutex.withLock { currentGeneration }
+    internal suspend fun currentValue(): Int = generationMutex.withLock { currentGeneration }
 
     public suspend fun advance() {
         generationMutex.withLock { currentGeneration += 1 }
@@ -15,7 +15,7 @@ public object SessionGeneration {
 
     // The lock spans the check and the writes together: a sign-out landing between the two would
     // otherwise put a fresh token back into a store that was just cleared.
-    public suspend fun persistIfSessionUnchanged(
+    internal suspend fun persistIfSessionUnchanged(
         expectedGeneration: Int,
         persistTokens: suspend () -> Unit
     ): Boolean = generationMutex.withLock {
