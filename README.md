@@ -468,7 +468,8 @@ A few consequences worth knowing:
 Ready-made pieces for apps that sign in with an access token and a rotating refresh token. Only the product's own endpoints are passed in:
 
 ```kotlin
-val authCredentialsStorage = AuthCredentialsStorageImpl(dataStore = Settings())
+// Any multiplatform-settings Settings, e.g. Settings() from multiplatform-settings-no-arg
+val authCredentialsStorage = AuthCredentialsStorageImpl(dataStore = authSettings)
 
 val sessionRefresher = AuthSessionRefresher(
     authCredentialsStorage = authCredentialsStorage,
